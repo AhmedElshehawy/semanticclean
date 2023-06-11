@@ -124,9 +124,12 @@ class LabelIssues:
         new_data.append(np.delete(self.labels, to_remove, axis=axis))
         return new_data
         
-    def suggest(self):
+    def suggest(self, frac: float=0.4, n: int=0):
         # provide a new version of data with suggested labels
-        return self.guessed_labels
+        if n > 0:
+            num_to_return = n
+        num_to_return = int(frac * len(self.guessed_labels))
+        return self.guessed_labels[:num_to_return]
     
     def report(self, include_cols: Dict[str, np.ndarray]={}):
         data_cols = {'example': self.idx_issues, 'given_label': self.labels[self.idx_issues], \
