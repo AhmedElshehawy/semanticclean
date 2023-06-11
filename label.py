@@ -4,7 +4,7 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 
 class LabelIssues:
@@ -29,7 +29,19 @@ class LabelIssues:
         self.score_list = []
         self.confident_joint_mat = None
 
-    def _get_class_thresholds(self, labels: np.ndarray, pred_probs:np.ndarray, epsilon: float, verbose: bool):
+    def _get_class_thresholds(self, labels: np.ndarray, pred_probs: np.ndarray, epsilon: float, verbose: bool) -> np.ndarray:
+        """Calculate the threshold of every class.
+
+        Args:
+            labels (np.ndarray): given (noisy) labels of shape (n,), n is the number of examples
+            pred_probs (np.ndarray): the prediction probabilities of shape (n, m),
+            n is the number of examples, and m is the number of classes
+            epsilon (float): small positive number to avoid division by zero
+            verbose (bool): if to print some info or not
+
+        Returns:
+            np.ndarray: the calculated thresholds of each class, of shape (m,), m is the number of classes
+        """
         if verbose:
             print('--> Calculating class thresholds...\n')
         # initialize empty 2D matrix with shape (num_examples, num_classes)
@@ -47,7 +59,24 @@ class LabelIssues:
 
         return class_thresholds
 
-    def _get_confident_joint_mat(self, labels, pred_probs, class_thresholds, rank_by, verbose):
+    def _get_confident_joint_mat(self, labels: np.ndarray, pred_probs: np.ndarray, class_thresholds: np.ndarray,
+                                 rank_by: str, verbose: bool) -> Tuple[np.ndarray]:
+        """Calculate the confident joint matrix.
+
+        Args:
+            labels (np.ndarray): given (noisy) labels of shape (n,)
+            pred_probs (np.ndarray): prediction probabilities of shape (n, m), n: number of examples, 
+            and m: number of classes.
+            class_thresholds (np.ndarray): the calculated class thresholds of shape (m,), m: number of classes
+            rank_by (str): how to calculate the score of each suspicious label
+            verbose (bool): if to print some info or not
+
+        Returns:
+            Tuple[np.ndarray]: conf_mat, the confident joint matrix of shape (m, m), m: number of classes,
+            idx_list, a numpy array of indices of all labels that may have issue,
+            guessed_labels_list, a numpy array fo guessed true labels, 
+            rank_score_list, a numpy array that stores a score for each example that might has a label issue.
+        """
         if verbose:
             print('--> Detecting label issues...\n')
         # class_thresholds = self._get_class_thresholds(labels, pred_probs, epsilon)
@@ -95,8 +124,14 @@ class LabelIssues:
                         pred_probs[i][noisy_label], max_prob, by=rank_by))
         return conf_mat, np.array(idx_list), np.array(guessed_labels_list), np.array(rank_score_list)
 
-    def detect_issues(self, rank_by='normalized_margin', verbose=False):
+    def detect_issues(self, rank_by: str = 'normalized_margin', verbose: bool = False):
+        """Detect label issues and rank them.
 
+        Args:
+            rank_by (str, optional): how to calculate the score of each example. Defaults to 'normalized_margin'.
+            CURRENTLY, only supports 'normalized_margin'.
+            verbose (bool, optional): if to print some info or not. Defaults to False.
+        """
         class_thresholds = self._get_class_thresholds(
             self.labels, self.pred_probs, self.epsilon, verbose)
         conf_mat, idx_arr, guessed_labels_arr, rank_score_arr = self._get_confident_joint_mat(
@@ -110,20 +145,37 @@ class LabelIssues:
 
         self.confident_joint_mat = conf_mat
 
-    def _rank_score(self, noisy_label_prob, max_prob, by='normalized_margin'):
+    def _rank_score(self, noisy_label_prob: float, max_prob: float, by: str = 'normalized_margin') -> float:
+        """Calculate the score of each example.
+
+        Args:
+            noisy_label_prob (float): the prediction probability fo given label (noisy label)
+            max_prob (float): max probability of this example neglecting the probability of the given label
+            by (str, optional): how to calculate this score. Defaults to 'normalized_margin'.
+            CURRENTLY, only supports 'normalized_margin'
+
+        Returns:
+            float: the score of this example
+        """
         if by == 'normalized_margin':
             return noisy_label_prob - max_prob
 
     def prune(self, *args, frac: float = 0.4, n: int = 0, axis: int = 0) -> List[np.ndarray]:
-        """_summary_
+        """Prune the examples with issues.
 
         Args:
-            frac (float, optional): _description_. Defaults to 0.4.
-            n (int, optional): _description_. Defaults to 0.
-            axis (int, optional): _description_. Defaults to 0.
+            frac (float, optional): the percentage you want to drop. Defaults to 0.4.
+            n (int, optional): number of examples you want to drop. Defaults to 0.
+            axis (int, optional): axis you want to drop along,
+            for example if the data shape is (n, m), then axis=0, if data shape is (m, n), then axis=1. Defaults to 0.
+
+            NOTE: this method works on ranked data, so it will prune the most sever ones
+            NOTE: if n > 0, then the frac arg will be neglected.
 
         Returns:
-            _type_: _description_
+            List[np.ndarray]: list of supplied arrays without noisy data
+            NOTE: the labels array will be added automatically, so don't provide it as an argument
+            NOTE: labels will always be the last element in this list
         """
         if n > 0:
             num_to_remove = n
@@ -139,25 +191,49 @@ class LabelIssues:
         new_data.append(np.delete(self.labels, to_remove, axis=axis))
         return new_data
 
-    def suggest(self, frac: float = 0.4, n: int = 0):
+    def suggest(self, frac: float = 0.4, n: int = 0) -> np.ndarray:
+        """Suggest new labels to replace the given labels.
+
+        Args:
+            frac (float, optional): the percentage of corrupted labels you want 
+            to replace with suggested labels. Defaults to 0.4.
+            n (int, optional): the percentage of corrupted labels you want 
+            to replace with suggested labels. Defaults to 0.
+
+            NOTE: if n>0, then frac will be neglected
+
+        Returns:
+            np.ndarray: array of suggested labels
+        """
         # provide a new version of data with suggested labels
         if n > 0:
             num_to_return = n
         num_to_return = int(frac * len(self.guessed_labels))
         return self.guessed_labels[:num_to_return]
 
-    def report(self, include_cols: Dict[str, np.ndarray] = {}):
+    def report(self, include_cols: Dict[str, np.ndarray] = {}) -> pd.DataFrame:
+        """Return a dataframe with some info about the data.
+
+        Args:
+            include_cols (Dict[str, np.ndarray], optional): if you want to add any column to the report dataframe. Defaults to {}.
+            NOTE: any column you provide, will be preceded with '_'
+
+        Returns:
+            pd.DataFrame: pandas dataframe
+        """
         data_cols = {'example': self.idx_issues, 'given_label': self.labels[self.idx_issues],
                      'score': self.score_list, 'guessed_label': self.guessed_labels}
 
         if len(include_cols) > 0:
-            include_cols = {'_'+k: v[self.idx_issues] for k, v in include_cols.items()}
+            include_cols = {'_'+k: v[self.idx_issues]
+                            for k, v in include_cols.items()}
             data_cols = {**include_cols, **data_cols}
 
         df = pd.DataFrame(data_cols)
         return df
 
     def summary(self):
+        """Print the contents of confident joint matrix in human readable format."""
         print('-'*79)
         for i in range(self.num_classes):
             for j in range(self.num_classes):
@@ -170,4 +246,5 @@ class LabelIssues:
         print('-'*79)
 
     def __len__(self):
+        """Return the number of detected issues."""
         return len(self.idx_issues)
