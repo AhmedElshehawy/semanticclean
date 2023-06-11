@@ -1,3 +1,4 @@
 dist/*
 semanticclean.egg-info/*
 test.ipynb
+.vscode/*
