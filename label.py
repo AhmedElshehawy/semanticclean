@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from typing import List
+from typing import List, Dict
 
 class LabelIssues:
     def __init__(self, labels, pred_probs):
@@ -128,11 +128,15 @@ class LabelIssues:
         # provide a new version of data with suggested labels
         return self.guessed_labels
     
-    def report(self):
-        df = pd.DataFrame(
-            {'example': self.idx_issues, 'given_label': self.labels[self.idx_issues], \
+    def report(self, include_cols: Dict[str, np.ndarray]={}):
+        data_cols = {'example': self.idx_issues, 'given_label': self.labels[self.idx_issues], \
              'score': self.score_list, 'guessed_label': self.guessed_labels}
-        )
+        
+        if len(include_cols) > 0:
+            include_cols = {'_'+k: v for k, v in include_cols.items()}
+            data_cols = {**include_cols,**data_cols}
+        
+        df = pd.DataFrame(data_cols)
         return df
     
     def summary(self):
