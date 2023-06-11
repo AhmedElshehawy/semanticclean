@@ -133,7 +133,7 @@ class LabelIssues:
              'score': self.score_list, 'guessed_label': self.guessed_labels}
         
         if len(include_cols) > 0:
-            include_cols = {'_'+k: v for k, v in include_cols.items()}
+            include_cols = {'_'+k: v[:len(self)] for k, v in include_cols.items()}
             data_cols = {**include_cols,**data_cols}
         
         df = pd.DataFrame(data_cols)
